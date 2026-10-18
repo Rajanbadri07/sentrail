@@ -13,3 +13,4 @@
 | K-09 | Keycloak/OpenBao/Ollama never run end to end here | Tests simulate them | Environment | — | Medium | Open |
 | K-10 | `/cases/{id}/investigate` makes 3 synchronous LLM calls | Slow request | No job queue | — | Low | Open |
 | K-11 | `.dev-credentials.txt` holds demo recovery codes in the project root | Git-ignored and docker-ignored; dev values only | Seed output location | Delete when done; never reuse | Low | Open (mitigated) |
+| K-12 | AWS pipeline never run | `deploy.yml`, `ci.yml` (per-service), `docker-compose.aws.yml`, `scripts/deploy.sh`, `infra/aws/*.tf` written 2026-10-18. Only checked: YAML parses, `bash -n`, compose merge, version-history logic in a scratch dir. Terraform not installed here (never validated/planned); no AWS account used; GitHub never ran the workflows | No AWS access / Terraform in this environment | Follow docs/DEPLOYMENT_AWS.md and fix what the first run shows | High | Written, unverified |

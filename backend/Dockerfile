@@ -4,5 +4,7 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && python -m spacy download en_core_web_lg
 COPY . .
+# Data directory the API writes to. A named Docker volume mounted here (AWS deploy) copies this owner on first use.
+RUN mkdir -p /srv/data && chown app:app /srv/data
 USER app
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

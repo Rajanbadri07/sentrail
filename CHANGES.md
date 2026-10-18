@@ -11,6 +11,9 @@ a developer machine. Backend: 160 checks, frontend: 23 tests, all passing. See [
 
 ## Added
 
+- **AWS deployment from GitHub**: pushing to `main` tests, builds and deploys only the service that changed (backend or frontend). Run the
+  `deploy` workflow by hand to pick backend / frontend / both, list earlier versions, or roll one service back. See [docs/DEPLOYMENT_AWS.md](docs/DEPLOYMENT_AWS.md).
+
 - **Platform security baseline** screen: the minimum password length, longest inactivity and shortest audit retention every
   organization must meet. Applying it asks for confirmation first because it affects every organization at once.
 - **Platform plans** in the web app: a Plans screen (edit which features each plan includes) and a plan selector on Organizations.

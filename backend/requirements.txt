@@ -24,3 +24,4 @@ cryptography
 slowapi
 email-validator
 dnspython
+pyarrow

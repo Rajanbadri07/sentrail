@@ -2,6 +2,21 @@
 
 Engineering log of meaningful changes, newest first. User-facing release notes: [../CHANGES.md](../CHANGES.md).
 
+## 2026-10-18 — AWS deployment pipeline (GitHub Actions → ECR → EC2 via SSM), per-service deploy and rollback
+
+**Added**
+- `.github/workflows/deploy.yml`: `plan` (changed folders on push; service/action inputs on manual run; main only) → `test` (reuses ci.yml per service) →
+  `build-backend` / `build-frontend` (push `sentrail-api`/`sentrail-web:<sha>` to ECR, OIDC role) → `deploy` (S3 bundle + SSM Run Command, smoke test).
+  Actions: deploy, rollback (version empty = previous), list-versions (ECR).
+- `scripts/deploy.sh` (runs on the host): per-service history `/opt/sentrail/versions/{api,web}`, `.env` pulled from Secrets Manager and sanity-checked,
+  `.deploy.env` (ECR_REGISTRY, API_TAG, WEB_TAG), health waits, history recorded only after healthy.
+- `docker-compose.aws.yml` (ECR images, named volume `api-data`), `infra/aws/` Terraform (EC2 t3.large + EIP, SG 80/443, ECR, S3, Secrets Manager, DLM snapshots, OIDC deploy role), `docs/DEPLOYMENT_AWS.md`.
+**Changed**
+- `ci.yml`: push to `main` no longer runs it (deploy.yml calls it); `run_backend`/`run_frontend` inputs; image build checks.
+- `backend/Dockerfile`: creates `/srv/data` owned by `app` (a named volume copies that owner; the API runs as uid 10001 on a read-only root).
+- `.gitignore`: Terraform state and tfvars.
+**Verified**: YAML parse, `bash -n`, `docker compose config` merge (images, volume), version-history logic in a scratch directory. **Not run**: GitHub Actions, Terraform (not installed), AWS, jq (not installed locally).
+
 ## 2026-10-17 — Two-factor is the user's choice; QR setup; DB flag; sign-in errors
 
 **Changed**

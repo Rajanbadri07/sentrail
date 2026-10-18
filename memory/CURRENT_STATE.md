@@ -71,3 +71,7 @@ All seeded users (master + demo) use `<name>@sentrail.qatech.world`; demo org SS
 ## Docker Desktop run on the domain (2026-10-17)
 
 Stack runs via docker-compose.prod.yml + Caddyfile.local at https://sentrail.qatech.world (needs hosts-file entry, admin). DB recreated and demo-seeded with @sentrail.qatech.world users. Old localhost .env saved outside the repo as ../.env.bak-localhost. Not browser-checked.
+
+## AWS pipeline (2026-10-18)
+
+Written, never run (K-12): push to `main` deploys only the changed service (backend/frontend); manual run picks service + deploy / rollback / list-versions. Host state in `/opt/sentrail/versions`. Setup, DNS records and GitHub variables: [docs/DEPLOYMENT_AWS.md](../docs/DEPLOYMENT_AWS.md). Local sign-in error on the domain was a missing hosts-file entry (`scripts/add-hosts.ps1`, admin).

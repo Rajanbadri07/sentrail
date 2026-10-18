@@ -1,10 +1,16 @@
 name: ci
 on:
   push:
+    branches-ignore: [main]   # main is tested by deploy.yml, which calls this workflow for the services that changed
   pull_request:
+  workflow_call:
+    inputs:                   # strings, so that a normal push or pull request (no inputs) runs everything
+      run_backend:  { type: string, default: "true" }
+      run_frontend: { type: string, default: "true" }
 
 jobs:
   frontend:
+    if: ${{ inputs.run_frontend != 'false' }}
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: frontend } }
     steps:
@@ -17,6 +23,7 @@ jobs:
       - run: npm run build
 
   backend:
+    if: ${{ inputs.run_backend != 'false' }}
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: backend } }
     steps:
@@ -34,3 +41,21 @@ jobs:
           set -a; . ../.env; set +a
           PG_SUPERUSER_URL="postgresql://postgres:${POSTGRES_SUPERUSER_PASSWORD}@127.0.0.1" \
           OWNER_PASSWORD="$SENTRAIL_OWNER_PASSWORD" sh tests/run_all.sh
+
+  image-backend:   # the production images must at least build on every change
+    if: ${{ inputs.run_backend != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with: { context: backend, push: false, cache-from: type=gha,scope=api, cache-to: "type=gha,scope=api,mode=max" }
+
+  image-frontend:
+    if: ${{ inputs.run_frontend != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with: { context: frontend, push: false, cache-from: type=gha,scope=web, cache-to: "type=gha,scope=web,mode=max" }

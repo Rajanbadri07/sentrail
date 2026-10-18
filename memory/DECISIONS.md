@@ -3,6 +3,13 @@
 Newest first. Don't reverse one without a stated reason and a new entry. Longer context is in
 [PROJECT_MEMORY.md](PROJECT_MEMORY.md).
 
+## Decision: AWS deploy = GitHub OIDC → ECR → SSM Run Command on one EC2 host; backend and frontend versioned separately
+Date: 2026-10-18 · Status: accepted (requested by the user: choose service in GitHub, rollback to previous version)
+Decision: Images tagged with the commit SHA per service; host keeps a per-service history and `.deploy.env` tags; `.env` lives only in Secrets Manager; no SSH, no stored AWS keys; only `main` can deploy.
+Reason: Matches the existing single-VM plan (Caddy + compose) with the least moving parts; services must be deployable and reversible independently.
+Alternatives: ECS Fargate + ALB + RDS (more robust, more cost/work; the documented next step); SSH deploy (key management); building on the server.
+Impact: Single host, short API downtime per deploy, rollback never reverts DB migrations.
+
 ## Decision: Logs-based observability (Loki + Grafana + Alloy), no Prometheus/OpenTelemetry yet
 Date: 2026-10-17 · Status: accepted
 Context: Needed dashboards and alerts for requests, errors, latency, external services and AI.

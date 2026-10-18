@@ -109,7 +109,7 @@ because TLS ends at the load balancer. Check that after the first deploy; it is 
 
 ## Not done yet
 
-No Terraform or cloud resources exist, and nothing here has been deployed or tested against a real cloud.
+Terraform and a GitHub Actions pipeline for AWS now exist ([DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)), but nothing here has been deployed or tested against a real cloud.
 
 ## Run on Docker Desktop with the domain (local)
 

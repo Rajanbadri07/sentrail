@@ -2,6 +2,7 @@
 import io
 import os
 import uuid
+import httpx
 import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, Depends, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -126,7 +127,10 @@ def investigate(alert_id: str, p: Principal = Depends(require("str.draft", featu
     if alert["status"] in ("closed", "str_filed"):
         raise HTTPException(409, f"This alert is {alert['status'].replace('_', ' ')}")
     _, facts = _case_detail(p, alert)
-    out = investigator.investigate(facts)
+    try:
+        out = investigator.investigate(facts)
+    except (httpx.HTTPError, RuntimeError):         # model server down, model not pulled, or the provider settings are invalid
+        raise HTTPException(503, "The AI model isn't available. Start the AI service (Ollama) and pull the model, then try again")
     db.save_ai_draft(p, alert_id, out["str_draft"])
     db.audit(p, "ai_investigation", alert_id, {"steps": out["steps"], "verification": out["verification"]})
     return out

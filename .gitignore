@@ -54,3 +54,4 @@ infra/aws/.terraform/
 *.tfstate
 *.tfstate.*
 infra/aws/terraform.tfvars
+aws_credentials.env

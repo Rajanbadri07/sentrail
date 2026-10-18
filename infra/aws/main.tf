@@ -64,7 +64,11 @@ resource "aws_s3_bucket_public_access_block" "deploy" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "deploy" {
   bucket = aws_s3_bucket.deploy.id
-  rule { apply_server_side_encryption_by_default { sse_algorithm = "AES256" } }
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "deploy" {
@@ -228,7 +232,7 @@ resource "aws_iam_role_policy_attachment" "dlm" {
 }
 
 resource "aws_dlm_lifecycle_policy" "daily" {
-  description        = "Daily snapshots of the Sentrail host disk, kept 14 days"
+  description        = "Daily snapshots of the Sentrail host disk kept 14 days"
   execution_role_arn = aws_iam_role.dlm.arn
   state              = "ENABLED"
   policy_details {

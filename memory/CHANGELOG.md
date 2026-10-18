@@ -2,6 +2,12 @@
 
 Engineering log of meaningful changes, newest first. User-facing release notes: [../CHANGES.md](../CHANGES.md).
 
+## 2026-10-18 — GCP deployment files (Compute Engine, Artifact Registry, Secret Manager, WIF)
+
+**Added** `infra/gcp/*.tf` (e2-standard-2 = 8 GB, 30 GB boot disk, static IP, IAP-only SSH, Artifact Registry, Secret Manager secret, daily snapshots, Workload Identity Federation limited to `main` of the repo), `docker-compose.gcp.yml`, `scripts/deploy-gcp.sh` (derived from deploy.sh; `gcloud` instead of `aws`), `.github/workflows/deploy-gcp.yml` (manual run only; deploys over IAP SSH), `docs/DEPLOYMENT_GCP.md`. Restored `.github/workflows/ci.yml` from git history (it was deleted in commit 369d7a5; the deploy workflow reuses it).
+**Verified:** `terraform validate` and `fmt -check` clean (Terraform 1.16.6 installed with winget), `bash -n`, workflow YAML parses. **Not run** against GCP or GitHub (K-13).
+Also: AWS `infra/aws/terraform.tfvars` set to `m7i-flex.large` + `root_volume_gb = 30`; `terraform plan` showed 3 to add; apply not run.
+
 ## 2026-10-18 — AWS deployment pipeline (GitHub Actions → ECR → EC2 via SSM), per-service deploy and rollback
 
 **Added**

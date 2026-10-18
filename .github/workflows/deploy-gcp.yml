@@ -1,0 +1,218 @@
+name: deploy-gcp
+# Backend and frontend are separate images with separate versions (the commit SHA they were built from).
+#   push to main  -> test, build and deploy only the service(s) whose folder changed
+#   Run workflow  -> pick service (backend | frontend | both) and action:
+#                      deploy         build this commit and deploy it
+#                      rollback       version empty = the previous version of that service; or a commit SHA from list-versions
+#                      list-versions  show the images in Artifact Registry (newest first); deploys nothing
+# No GCP keys in GitHub: Workload Identity Federation lets a service account push to Artifact Registry and run scripts/deploy-gcp.sh
+# on the VM over IAP SSH. Setup: docs/DEPLOYMENT_GCP.md
+on:
+  # push:                 # uncomment after the first manual deploy works, to deploy changed services on every push to main
+  #   branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Which service"
+        type: choice
+        options: [both, backend, frontend]
+        default: both
+      action:
+        description: "deploy = build this commit and deploy it | rollback = go back | list-versions = show what can be rolled back to"
+        type: choice
+        options: [deploy, rollback, list-versions]
+        default: deploy
+      version:
+        description: "Rollback only: commit SHA to go back to. Empty = the previous version of the chosen service(s)."
+        type: string
+        required: false
+        default: ""
+      seed_demo:
+        description: "Seed demo data after deploy (needs ENV=dev in the secret; sandbox only)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production-gcp
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      action:   ${{ steps.p.outputs.action }}
+      backend:  ${{ steps.p.outputs.backend }}
+      frontend: ${{ steps.p.outputs.frontend }}
+      run:      ${{ steps.p.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+          IN_SERVICE: ${{ inputs.service }}
+          IN_ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          # Deploy scripts come from the branch being run, so only main may deploy.
+          [ "$REF" = refs/heads/main ] || { echo "::error::Run this workflow from the main branch"; exit 1; }
+          backend=false; frontend=false; run=true; action=deploy
+          if [ "$EVENT" = push ]; then
+            if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA"); else changed=$(git ls-files); fi
+            echo "$changed" | grep -q '^backend/'  && backend=true  || true
+            echo "$changed" | grep -q '^frontend/' && frontend=true || true
+            # Compose, proxy or Keycloak config changed without code: redeploy what is running, nothing is built.
+            if [ $backend = false ] && [ $frontend = false ]; then
+              echo "$changed" | grep -qE '^(docker-compose.*\.yml|infra/|scripts/deploy-gcp\.sh)' || run=false
+            fi
+          else
+            action=$IN_ACTION
+            case "$IN_SERVICE" in backend) backend=true;; frontend) frontend=true;; *) backend=true; frontend=true;; esac
+          fi
+          echo "action=$action backend=$backend frontend=$frontend run=$run"
+          { echo "action=$action"; echo "backend=$backend"; echo "frontend=$frontend"; echo "run=$run"; } >> "$GITHUB_OUTPUT"
+
+  versions:
+    needs: plan
+    if: ${{ needs.plan.outputs.action == 'list-versions' }}
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Images in Artifact Registry, newest first (the tag is the commit SHA)
+        run: |
+          for img in sentrail-api sentrail-web; do
+            echo "### $img" >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
+            gcloud artifacts docker tags list "${{ vars.GCP_REGISTRY }}/$img" --sort-by=~CREATE_TIME --limit=15 --format='value(tag,create_time)'               | tee -a "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  test:
+    needs: plan
+    if: ${{ needs.plan.outputs.action == 'deploy' && needs.plan.outputs.run == 'true' && (needs.plan.outputs.backend == 'true' || needs.plan.outputs.frontend == 'true') }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      run_backend: ${{ needs.plan.outputs.backend }}
+      run_frontend: ${{ needs.plan.outputs.frontend }}
+
+  build-backend:
+    needs: [plan, test]
+    if: ${{ needs.test.result == 'success' && needs.plan.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ${{ vars.GCP_REGISTRY }}/sentrail-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+  build-frontend:
+    needs: [plan, test]
+    if: ${{ needs.test.result == 'success' && needs.plan.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push (the API's public URL is baked in at build time)
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          build-args: VITE_API_BASE_URL=${{ vars.API_URL }}
+          tags: ${{ vars.GCP_REGISTRY }}/sentrail-web:${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+  deploy:
+    needs: [plan, build-backend, build-frontend]
+    # After the builds that were needed succeeded, or alone for a rollback or a config-only redeploy.
+    if: >-
+      ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.action != 'list-versions'
+          && needs.build-backend.result != 'failure' && needs.build-frontend.result != 'failure'
+          && (needs.plan.outputs.action == 'rollback' || needs.build-backend.result == 'success' || needs.build-frontend.result == 'success'
+              || (needs.plan.outputs.backend != 'true' && needs.plan.outputs.frontend != 'true')) }}
+    runs-on: ubuntu-latest
+    environment: production        # add required reviewers in GitHub -> Settings -> Environments for a manual approval step
+    permissions: { contents: read, id-token: write }
+    env:
+      ACTION: ${{ needs.plan.outputs.action }}
+      DO_BACKEND: ${{ needs.plan.outputs.backend }}
+      DO_FRONTEND: ${{ needs.plan.outputs.frontend }}
+      VERSION: ${{ inputs.version }}
+      SEED: ${{ inputs.seed_demo }}
+    steps:
+      - name: Work out the image tag for each service
+        run: |
+          set -euo pipefail
+          # "" = leave that service as it is; "previous" = roll back one step; otherwise an exact tag. It ends up in a command that runs on the host.
+          api=""; web=""
+          if [ "$ACTION" = rollback ]; then
+            echo "$VERSION" | grep -Eq '^[A-Za-z0-9._-]{0,128}$' || { echo "::error::invalid version"; exit 1; }
+            want=${VERSION:-previous}
+            [ "$DO_BACKEND"  = true ] && api=$want
+            [ "$DO_FRONTEND" = true ] && web=$want
+          else
+            [ "${{ needs.build-backend.result }}"  = success ] && api=${{ github.sha }}
+            [ "${{ needs.build-frontend.result }}" = success ] && web=${{ github.sha }}
+          fi
+          echo "API_TAG=$api" >> "$GITHUB_ENV"; echo "WEB_TAG=$web" >> "$GITHUB_ENV"
+          echo "backend='$api' frontend='$web'"
+
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: A rollback target must exist in Artifact Registry
+        if: ${{ env.ACTION == 'rollback' && inputs.version != '' }}
+        run: |
+          [ "$DO_BACKEND"  = true ] && gcloud artifacts docker images describe "${{ vars.GCP_REGISTRY }}/sentrail-api:$VERSION" >/dev/null
+          [ "$DO_FRONTEND" = true ] && gcloud artifacts docker images describe "${{ vars.GCP_REGISTRY }}/sentrail-web:$VERSION" >/dev/null
+          echo "image $VERSION found"
+
+      - name: Deploy on the VM (IAP SSH)
+        run: |
+          set -euo pipefail
+          seed=0; [ "$SEED" = "true" ] && seed=1
+          tar czf bundle.tgz docker-compose.yml docker-compose.prod.yml docker-compose.gcp.yml infra scripts/deploy-gcp.sh
+          VM="${{ vars.GCP_VM }}"
+          SSH=(--zone "${{ vars.GCP_ZONE }}" --tunnel-through-iap --quiet)
+          gcloud compute scp "${SSH[@]}" bundle.tgz "$VM":/tmp/sentrail-bundle.tgz
+          # tags are validated above (letters, digits, . _ -), so they are safe inside this command
+          gcloud compute ssh "$VM" "${SSH[@]}" --command "set -e; sudo install -d -m 750 /opt/sentrail; sudo tar xzf /tmp/sentrail-bundle.tgz -C /opt/sentrail; sudo env API_TAG='$API_TAG' WEB_TAG='$WEB_TAG' REGISTRY='${{ vars.GCP_REGISTRY }}' SECRET_ID='${{ vars.GCP_SECRET_ID }}' SEED_DEMO=$seed bash /opt/sentrail/scripts/deploy-gcp.sh" 2>&1 | tee deploy.log
+          { echo '```'; tail -80 deploy.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test from the internet (needs DNS and a certificate)
+        run: |
+          curl -fsS --retry 12 --retry-delay 10 --retry-all-errors -o /dev/null "${{ vars.API_URL }}/readyz"
+          curl -fsS --retry 6 --retry-delay 10 --retry-all-errors -o /dev/null "${{ vars.APP_URL }}/"
+          echo "Done: $ACTION backend=${API_TAG:-unchanged} frontend=${WEB_TAG:-unchanged}"

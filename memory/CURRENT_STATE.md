@@ -75,3 +75,7 @@ Stack runs via docker-compose.prod.yml + Caddyfile.local at https://sentrail.qat
 ## AWS pipeline (2026-10-18)
 
 Written, never run (K-12): push to `main` deploys only the changed service (backend/frontend); manual run picks service + deploy / rollback / list-versions. Host state in `/opt/sentrail/versions`. Setup, DNS records and GitHub variables: [docs/DEPLOYMENT_AWS.md](../docs/DEPLOYMENT_AWS.md). Local sign-in error on the domain was a missing hosts-file entry (`scripts/add-hosts.ps1`, admin).
+
+## GCP deployment files (2026-10-18)
+
+Written, never run (K-13): `infra/gcp`, `docker-compose.gcp.yml`, `scripts/deploy-gcp.sh`, `.github/workflows/deploy-gcp.yml` (manual only), [docs/DEPLOYMENT_GCP.md](../docs/DEPLOYMENT_GCP.md). 8 GB VM, 30 GB disk. `ci.yml` restored. AWS: `terraform plan` OK (3 to add, 30 GB disk, m7i-flex.large), apply blocked/not run; AWS creds in git-ignored `aws_credentials.env`.

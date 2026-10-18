@@ -4,8 +4,8 @@ import { Link } from "react-router-dom";
 import { BandBadge, ErrorBox, PageHeader } from "../components/common";
 import { investigate } from "../services/sentrail";
 
-// Every lookup is audited with a reason (the API requires one).
-const REASONS = ["Alert investigation", "Law enforcement request", "Customer complaint", "Periodic review"];
+// Every lookup is audited with a reason (the API requires one). The reason is only recorded, never used to filter results; "All" covers any of them.
+const REASONS = ["All", "Alert investigation", "Law enforcement request", "Customer complaint", "Periodic review"];
 
 export function Search() {
   const [q, setQ] = useState("");
